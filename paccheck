@@ -1,0 +1,95 @@
+#!/usr/bin/env python
+"""
+paccheck: Log file parser for Intelerad PACS logs
+
+Copyright (c) 2010, Richard Clark, Red Spider Limited <richard@redspider.co.nz>
+
+To add into net-snmp:
+
+extend prl-pacs /usr/local/bin/paccheck --nokeys /var/log/PatientSearch.log
+
+
+"""
+import os, sys, logging, re
+from optparse import OptionParser
+
+
+logging.basicConfig(level=logging.WARN)
+log = logging.getLogger('paccheck')
+
+field_order = (
+    'query.count',
+    'row.average',
+    'time.min',
+    'time.max',
+    'time.average'
+)
+
+fields = {
+    'time.min': 'Minimum elapsed time',
+    'time.max': 'Maximum elapsed time',
+    'time.average': 'Median elapsed time',
+    'row.average': 'Median returned row count',
+    'query.count': 'Number of queries counted'
+}
+
+def paccheck(fh, field=None, nokeys=False):
+    for k in fields.keys():
+        fields[k] = None
+    times = []
+    row_set = []
+    for line in fh:
+        # Only tracking statistics lines
+        m = re.match(r'\[(\S+) (\S+) \S+ (\S+) [^\]]*\] .-- Elapsed: (\S+) sec: Got back (\d+) rows .*', line)
+        if m:
+            (date, time, host, elapsed, rows) = m.groups()
+            log.debug("%s %s %s %s %s" % (date, time, host, elapsed, rows))
+            elapsed = float(elapsed)
+            rows = int(rows)
+            if fields['time.min'] is None or elapsed < fields['time.min']:
+                fields['time.min'] = elapsed
+            if fields['time.max'] is None or elapsed > fields['time.max']:
+                fields['time.max'] = elapsed
+            times.append(elapsed)
+            row_set.append(rows)
+    
+    fields['time.average'] = sum(times) / len(times)
+    fields['row.average'] = sum(row_set) / len(row_set)
+    fields['query.count'] = len(row_set)
+    
+    if field is None:
+        for k in field_order:
+            if nokeys:
+                print "%s" % fields[k]
+            else:
+                print "%s\t%s" % (k, fields[k])
+    else:
+        print fields[field]
+
+if __name__ == "__main__":
+    usage = "usage: %prog [options] [filename]"
+    parser = OptionParser(usage="usage: %prog [options] filename")
+    parser.add_option("--verbose","-v",
+                      help = "print debugging output",
+                      action = "store_true")
+    parser.add_option("--field","-f",
+                    help = "particular field to display",
+                    type = "string",
+                    action = "store")
+    parser.add_option("--nokeys","-n",
+                    help = "don't show the keys for each field on display",
+                    action = "store_true")
+    (options, args) = parser.parse_args()
+    if options.verbose:
+        log.setLevel(logging.DEBUG)
+    
+    log.debug("Verbose mode: %s" % options.verbose)
+    
+    log.debug("Available fields:")
+    for k in field_order:
+        log.debug("%s: %s" % (k, fields[k]))
+    if len(args) > 0 and args[0] != '-':
+        paccheck(open(args[0],'rb'), options.field, options.nokeys)
+    else:
+        paccheck(sys.stdin, options.field, options.nokeys)
+        
