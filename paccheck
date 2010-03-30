@@ -14,8 +14,9 @@ import os, sys, logging, re
 from optparse import OptionParser
 
 
-logging.basicConfig(level=logging.WARN)
+logging.basicConfig()
 log = logging.getLogger('paccheck')
+log.setLevel(logging.WARN)
 
 field_order = (
     'query.count',
